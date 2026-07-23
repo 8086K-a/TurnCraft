@@ -380,7 +380,7 @@ async function fetchSidebarData() {
 
     const orderList = Array.isArray(ordersPayload?.data?.list) ? ordersPayload.data.list : []
     orders.value = orderList.map((order) => ({
-      order_id: String(order.orderId ?? ''),
+      order_id: order.orderNo || String(order.orderId ?? ''),
       title: order.orderNo || `订单 ${order.orderId ?? ''}`,
       status: orderStatusLabels[order.orderStatusCode] || order.orderStatusCode || '',
       amount: Number(order.payableAmount ?? 0),
