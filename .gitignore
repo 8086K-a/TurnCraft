@@ -3,7 +3,7 @@
 __pycache__/
 .env
 .vscode/
-.参考实现/
+参考实现/
 .DS_Store
 logs/
 frontend/node_modules/
