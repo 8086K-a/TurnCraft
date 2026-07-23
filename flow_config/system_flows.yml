@@ -1,0 +1,202 @@
+flows:
+  system_task_started:
+    description: 用于在新任务开始时通知用户
+    name: 任务开始确认
+    steps:
+      - id: start
+        type: start
+        next: acknowledge
+
+      - id: acknowledge
+        type: action
+        action: action_response
+        args:
+          mode: static
+          text: "好的，我们先处理{{ context.started_flow_name }}。"
+        next: end
+
+      - id: end
+        type: end
+        next: []
+
+  system_task_resumed:
+    description: 用于在恢复被暂停的任务时通知用户
+    name: 任务恢复确认
+    steps:
+      - id: start
+        type: start
+        next: acknowledge
+
+      - id: acknowledge
+        type: action
+        action: action_response
+        args:
+          mode: static
+          text: "好的，我们继续刚才的{{ context.resumed_flow_name }}。"
+        next: end
+
+      - id: end
+        type: end
+        next: []
+
+  system_completed:
+    description: 当前流程已完成且没有其他待处理事项
+    name: 完成标记
+    steps:
+      - id: start
+        type: start
+        next: end
+
+      - id: end
+        type: end
+        next: []
+
+  system_cannot_handle:
+    description: 用于处理系统无法支持的请求
+    name: 无法处理请求
+    steps:
+      - id: start
+        type: start
+        next:
+          - if: "context.get('reason') == 'clarification_rejected'"
+            then: clarification_rejected
+          - if: "context.get('reason') == 'not_supported'"
+            then: not_supported
+          - if: "context.get('reason') == 'no_relevant_answer'"
+            then: no_relevant_answer
+          - else: ask_rephrase
+
+      - id: clarification_rejected
+        type: action
+        action: action_response
+        args:
+          mode: rephrase
+          text: "看来我刚才理解偏了。你可以重新说一下你想查课程、查订单、查学习进度，还是申请退款或提交工单吗？"
+          prompt: |
+            你是一个中文教育智能客服助手，语气自然、友好、简洁。
+            请基于下面的建议回复，生成一句更自然的中文回复，保持原意，不要扩写。
+            对话上下文：
+            {{ history }}
+            用户最后一句：
+            用户：{{ user_message }}
+            建议回复：{{ current_response }}
+            改写后的回复：
+        next: end
+
+      - id: not_supported
+        type: action
+        action: action_response
+        args:
+          mode: rephrase
+          text: "我理解你的意思，不过这个能力目前还没有接入。"
+          prompt: |
+            你是一个中文教育智能客服助手，语气自然、友好、简洁。
+            请基于下面的建议回复，生成一句更自然的中文回复，保持原意，不要扩写。
+            对话上下文：
+            {{ history }}
+            用户最后一句：
+            用户：{{ user_message }}
+            建议回复：{{ current_response }}
+            改写后的回复：
+        next: end
+
+      - id: no_relevant_answer
+        type: action
+        action: action_response
+        args:
+          mode: rephrase
+          text: "我暂时没有查到合适的信息。你可以换个说法，或者告诉我更具体一点的课程或订单信息。"
+          prompt: |
+            你是一个中文教育智能客服助手，语气自然、友好、简洁。
+            请基于下面的建议回复，生成一句更自然的中文回复，保持原意，不要扩写。
+            对话上下文：
+            {{ history }}
+            用户最后一句：
+            用户：{{ user_message }}
+            建议回复：{{ current_response }}
+            改写后的回复：
+        next: end
+
+      - id: ask_rephrase
+        type: action
+        action: action_response
+        args:
+          mode: rephrase
+          text: "抱歉，我这边没有完全听明白。你可以再具体说一下你想处理什么教育方面的问题吗？"
+          prompt: |
+            你是一个中文教育智能客服助手，语气自然、友好、简洁。
+            请基于下面的建议回复，生成一句更自然的中文回复，保持原意，不要扩写。
+            对话上下文：
+            {{ history }}
+            用户最后一句：
+            用户：{{ user_message }}
+            建议回复：{{ current_response }}
+            改写后的回复：
+        next: end
+
+      - id: end
+        type: end
+        next: []
+
+  system_collect_information:
+    description: 在 collect 步骤中向用户询问缺失的槽位值
+    name: 收集信息
+    steps:
+      - id: start
+        type: start
+        next: ask
+
+      - id: ask
+        type: action
+        action: action_response
+        args: context.response
+        next: listen
+
+      - id: listen
+        type: action
+        action: action_listen
+        next: end
+
+      - id: end
+        type: end
+        next: []
+
+  system_task_interrupted:
+    description: 用于在当前任务被新任务中断时通知用户
+    name: 任务中断确认
+    steps:
+      - id: start
+        type: start
+        next: acknowledge
+
+      - id: acknowledge
+        type: action
+        action: action_response
+        args:
+          mode: static
+          text: "好的，我们先把{{ context.interrupted_flow_name }}放一放，先处理{{ context.started_flow_name }}。"
+        next: end
+
+      - id: end
+        type: end
+        next: []
+
+  system_task_canceled:
+    description: 用于在当前任务被取消时通知用户
+    name: 任务取消确认
+    steps:
+      - id: start
+        type: start
+        next: acknowledge
+
+      - id: acknowledge
+        type: action
+        action: action_response
+        args:
+          mode: static
+          text: "好的，{{ context.canceled_flow_name }}先帮你取消。"
+        next: end
+
+      - id: end
+        type: end
+        next: []

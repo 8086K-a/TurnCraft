@@ -1,0 +1,270 @@
+slots:
+  order_number:
+    type: text
+    label: 订单号
+    description: 用户的订单号
+
+  order_status:
+    type: text
+    label: 订单状态
+    description: 订单当前状态
+
+  order_summary:
+    type: text
+    label: 订单摘要
+    description: 订单摘要信息（包含报名课程、金额、支付时间等）
+
+  course_name:
+    type: text
+    label: 课程名称
+    description: 用户咨询的课程系列名称
+
+  course_info:
+    type: text
+    label: 课程信息
+    description: 课程详细信息（概述、适用人群、班次安排、价格等）
+
+  cohort_name:
+    type: text
+    label: 班次名称
+    description: 用户所属或咨询的班次名称
+
+  learning_progress_summary:
+    type: text
+    label: 学习进度摘要
+    description: 多维度学习进度信息（考勤、视频、作业、考试）
+
+  refund_reason:
+    type: text
+    label: 退款原因
+    description: 申请退款的原因说明
+
+  refund_type:
+    type: text
+    label: 退款类型
+    description: 退款类型（personal_reason/course_unsatisfied/schedule_conflict/duplicate_purchase）
+
+  ticket_type:
+    type: text
+    label: 工单类型
+    description: 工单类型（after_sales/complaint/refund）
+
+  ticket_description:
+    type: text
+    label: 问题描述
+    description: 用户的问题或投诉描述
+
+flows:
+  onboarding:
+    name: 欢迎引导
+    description: 在对话窗口初次打开时欢迎用户，并介绍助手可处理的教育服务。通常由系统主动触发。
+    steps:
+      - id: start
+        type: start
+        next: respond
+
+      - id: respond
+        type: action
+        action: action_response
+        args:
+          text: "你好，这里是教育智能助手。我可以帮你查询课程信息、查订单状态、了解学习进度，或者帮你提交退款申请和工单。有什么可以帮你的？"
+        next: end
+
+      - id: end
+        type: end
+        next: []
+
+  course_consultation:
+    name: 课程咨询
+    description: 查询课程系列的基本信息，包括课程概述、适用人群、在售班次安排及价格等。
+    steps:
+      - id: start
+        type: start
+        next: lookup_course
+
+      - id: lookup_course
+        type: action
+        action: action_lookup_course_info
+        next: respond
+
+      - id: respond
+        type: action
+        action: action_response
+        args:
+          text: "{{ slots.course_info }}"
+        next: end
+
+      - id: end
+        type: end
+        next: []
+
+  order_status_query:
+    name: 订单状态查询
+    description: 查询用户的订单当前处理状态，包括已支付、待支付、已取消等，以及报名课程和支付信息。
+    steps:
+      - id: start
+        type: start
+        next: ask_order_number
+
+      - id: ask_order_number
+        type: collect
+        slot_name: order_number
+        response:
+          text: "请告诉我你的订单号。"
+        next: lookup_order_status
+
+      - id: lookup_order_status
+        type: action
+        action: action_lookup_order_status
+        next: show_order_status
+
+      - id: show_order_status
+        type: action
+        action: action_response
+        args:
+          text: "订单{{ slots.order_number }}当前状态是：{{ slots.order_status }}。{{ slots.order_summary }}"
+        next: end
+
+      - id: end
+        type: end
+        next: []
+
+  learning_progress_query:
+    name: 学习进度查询
+    description: 查询学员在某个班次的多维度学习进度，包括考勤、视频完成情况、作业提交情况和考试成绩。
+    steps:
+      - id: start
+        type: start
+        next: ask_cohort_name
+
+      - id: ask_cohort_name
+        type: collect
+        slot_name: cohort_name
+        response:
+          text: "请告诉我你想查询哪个班次的学习进度？"
+        next: lookup_learning_progress
+
+      - id: lookup_learning_progress
+        type: action
+        action: action_lookup_learning_progress
+        next: show_progress
+
+      - id: show_progress
+        type: action
+        action: action_response
+        args:
+          text: "你在{{ slots.cohort_name }}的学习进度如下：{{ slots.learning_progress_summary }}"
+        next: end
+
+      - id: end
+        type: end
+        next: []
+
+  refund_request:
+    name: 退款申请
+    description: 收集订单号和退款原因、退款类型，提交退款申请并反馈处理结果。
+    steps:
+      - id: start
+        type: start
+        next: ask_order_number
+
+      - id: ask_order_number
+        type: collect
+        slot_name: order_number
+        response:
+          text: "请告诉我你的订单号。"
+        next: ask_refund_reason
+
+      - id: ask_refund_reason
+        type: collect
+        slot_name: refund_reason
+        response:
+          text: "请简单说一下退款原因。"
+        next: ask_refund_type
+
+      - id: ask_refund_type
+        type: collect
+        slot_name: refund_type
+        response:
+          text: "请选择退款类型：个人原因、课程不满意、时间冲突、重复购买。"
+        next: submit_refund
+
+      - id: submit_refund
+        type: action
+        action: action_submit_refund
+        next: refund_result
+
+      - id: refund_result
+        type: action
+        action: action_response
+        args:
+          text: "{{ slots.refund_result }}"
+        next: end
+
+      - id: end
+        type: end
+        next: []
+
+  ticket_submission:
+    name: 工单提交
+    description: 收集工单类型、关联订单号和问题描述，创建客服工单并返回工单编号与处理预期。
+    steps:
+      - id: start
+        type: start
+        next: ask_ticket_type
+
+      - id: ask_ticket_type
+        type: collect
+        slot_name: ticket_type
+        response:
+          text: "请选择工单类型：售后问题、投诉、退款。"
+        next: ask_order_number
+
+      - id: ask_order_number
+        type: collect
+        slot_name: order_number
+        response:
+          text: "请提供关联的订单号。"
+        next: ask_description
+
+      - id: ask_description
+        type: collect
+        slot_name: ticket_description
+        response:
+          text: "请详细描述你遇到的问题。"
+        next: submit_ticket
+
+      - id: submit_ticket
+        type: action
+        action: action_submit_ticket
+        next: ticket_result
+
+      - id: ticket_result
+        type: action
+        action: action_response
+        args:
+          text: "{{ slots.ticket_result }}"
+        next: end
+
+      - id: end
+        type: end
+        next: []
+
+  human_handoff:
+    name: 人工客服
+    description: 将当前对话转交给人工客服处理。
+    steps:
+      - id: start
+        type: start
+        next: respond
+
+      - id: respond
+        type: action
+        action: action_response
+        args:
+          text: "好的，我来为你转接人工客服，请稍等。"
+        next: end
+
+      - id: end
+        type: end
+        next: []

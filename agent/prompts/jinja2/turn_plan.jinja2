@@ -1,0 +1,110 @@
+## 任务说明
+你的任务是分析当前对话上下文，并生成一个 TurnPlan JSON。
+
+TurnPlan 顶层只允许以下三个字段：
+- `task`
+- `knowledge`
+- `chitchat`
+
+规则：
+- 这三个字段的值必须是 JSON 对象或 null。
+- 请根据用户真实表达的意图生成结果。
+- 如果用户同时表达了多个意图，可以同时填写多个轨道。
+- 后续执行引擎一次只能处理一个轨道；如果你输出多个轨道，系统会再向用户澄清先处理哪一个。
+- 不要输出额外字段。
+- 只输出合法 JSON，不要输出 markdown。
+- 最终答案只能是 JSON 文本本身，不要使用 Markdown 代码块包裹，例如以三个反引号和 json 开头的结构。
+
+---
+
+## Task 结构
+当用户是在办理业务时，填写 `task`：
+
+Task 对象示例：
+{
+  "commands": [
+    {"command": "start_flow", "flow": "<flow_id>"},
+    {"command": "resume_flow", "flow": "<flow_id>"},
+    {"command": "cancel_flow"},
+    {"command": "set_slots", "slots": {"<slot_name>": "<value>"}}
+  ]
+}
+
+仅允许以下 task commands：
+- `start_flow`
+- `resume_flow`
+- `cancel_flow`
+- `set_slots`
+
+可用 flows：
+{{ available_flows_json }}
+
+---
+
+## Knowledge 结构
+当用户是在咨询信息时，填写 `knowledge`：
+
+Knowledge 对象示例：
+{
+  "intents": ["<intent>"]
+}
+
+允许的 intent（从下列选项中选择，可以选择一个或多个）：
+{{ knowledge_intents_json }}
+
+---
+
+## Chitchat 结构
+当用户是在闲聊时，填写 `chitchat`：
+
+Chitchat 对象示例：
+{}
+
+---
+
+## 当前状态
+
+### Active Task
+{{ active_task_json }}
+
+### Interrupted Tasks
+{{ interrupted_tasks_json }}
+
+### Focused Object
+{{ focused_object_json }}
+
+对象处理规则：
+- 用户一次只会发送一条文本消息或一个对象消息。
+- 如果 Focused Object 是 product，且用户意图是了解课程，应启动 course_consultation，并用对象 title 生成 course_name slot。
+- 如果 Focused Object 是 order，且用户意图是查询订单，应启动 order_status_query，并用对象 id 生成 order_number slot。
+
+继续活跃任务（slot 收集）规则：
+- 如果存在 Active Task，且上一条助手消息是在询问用户提供某个信息（例如工单描述、退款原因等），则用户的回复应视为对该信息的补充。
+- 此时，应使用 set_slots 填充对应的 slot，而不是启动新流程、咨询知识或闲聊。
+- 从对话历史中推断当前需要收集的 slot 名称（例如 ticket_description、refund_reason、ticket_type、order_number 等），然后输出：
+  {"command": "set_slots", "slots": {"<slot_name>": "<用户提供的值>"}}
+
+---
+
+## 对话历史
+{{ current_conversation }}
+
+---
+
+## 当前任务
+请根据用户最后一句话生成 TurnPlan：
+"""{{ user_message }}"""
+
+TurnPlan 只允许输出以下形状：
+
+{
+  "task": null,
+  "knowledge": null,
+  "chitchat": null
+}
+
+请根据用户真实意图，把对应字段替换成对象；没有命中的字段保持 null。
+
+不要输出解释。
+不要使用 markdown 代码块。
+你的 TurnPlan：
