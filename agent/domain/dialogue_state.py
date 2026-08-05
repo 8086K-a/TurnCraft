@@ -1,5 +1,3 @@
-from typing import Any
-
 from pydantic import BaseModel, Field
 
 from .context import (
@@ -27,9 +25,6 @@ class DialogueState(BaseModel):
     current_session_id: str | None = None
 
     pending_turn: Turn | None = None
-
-    # Tracks returned by the planner while waiting for the user's choice.
-    pending_clarification: list[dict[str, Any]] = Field(default_factory=list)
 
     def end_system_flow(self):
         self.active_system_flow = None

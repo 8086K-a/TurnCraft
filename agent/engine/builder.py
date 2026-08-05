@@ -11,6 +11,7 @@ from agent.handler.task.command.processor import CommandProcessor
 from agent.handler.task.flow.models import FlowsList
 from agent.handler.chitchat import ChitchatHandler
 from agent.handler.clarify import ClarifyResponder
+from agent.handler.knowledge import KnowledgeHandler
 from agent.infrastructure.edu_api import EduApiClient
 from agent.infrastructure.llm import get_llm
 
@@ -32,7 +33,8 @@ def build_dialogue_engine() -> DialogueEngine:
         flows_list=FlowsList(flow_manager),
         planner=TurnPlanner(llm, flow_manager),
         plan_validator=TurnPlanValidator(flow_manager),
-        clarify_responder=ClarifyResponder(),
+        clarify_responder=ClarifyResponder(llm=llm),
         api=EduApiClient(settings.commerce_api_base_url),
         chitchat_handler=ChitchatHandler(llm),
+        knowledge_handler=KnowledgeHandler(llm=llm),
     )

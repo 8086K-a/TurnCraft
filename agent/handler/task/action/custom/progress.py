@@ -29,18 +29,18 @@ async def action_lookup_learning_progress(
 
         progress = await api.get_my_cohort_progress(user_id, target["cohortId"])
         parts = []
-        if progress.get("attendanceSummary"):
-            a = progress["attendanceSummary"]
+        if progress.get("attendance"):
+            a = progress["attendance"]
             parts.append(f"出勤：{a.get('presentCount', 0)}次出勤 / {a.get('absentCount', 0)}次缺勤")
-        if progress.get("videoSummary"):
-            v = progress["videoSummary"]
-            parts.append(f"视频：{v.get('completedCount', 0)}/{v.get('totalCount', 0)}个已完成")
-        if progress.get("homeworkSummary"):
-            h = progress["homeworkSummary"]
-            parts.append(f"作业：{h.get('submittedCount', 0)}/{h.get('totalCount', 0)}次已提交")
-        if progress.get("examSummary"):
-            e = progress["examSummary"]
-            parts.append(f"考试：{e.get('submittedCount', 0)}/{e.get('totalCount', 0)}次已参加")
+        if progress.get("video"):
+            v = progress["video"]
+            parts.append(f"视频：{v.get('completedVideos', 0)}/{v.get('totalVideos', 0)}个已完成")
+        if progress.get("homework"):
+            h = progress["homework"]
+            parts.append(f"作业：{h.get('submittedCount', 0)}/{h.get('totalHomeworks', 0)}次已提交")
+        if progress.get("exam"):
+            e = progress["exam"]
+            parts.append(f"考试：{e.get('submittedCount', 0)}/{e.get('totalExams', 0)}次已参加")
 
         summary = "；".join(parts) if parts else "暂无学习数据。"
         return ActionResult(slots={"learning_progress_summary": summary})

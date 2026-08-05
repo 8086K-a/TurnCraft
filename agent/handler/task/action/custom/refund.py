@@ -2,6 +2,18 @@ from ..models import ActionResult
 from ._order_items import first_order_item, order_item_id
 
 
+_REFUND_TYPE_MAP = {
+    "个人原因": "personal_reason",
+    "课程不满意": "course_unsatisfied",
+    "时间冲突": "schedule_conflict",
+    "重复购买": "duplicate_purchase",
+    "personal_reason": "personal_reason",
+    "course_unsatisfied": "course_unsatisfied",
+    "schedule_conflict": "schedule_conflict",
+    "duplicate_purchase": "duplicate_purchase",
+}
+
+
 async def action_submit_refund(
     args: dict, slots: dict, context: dict, **kwargs
 ) -> ActionResult:
@@ -15,10 +27,21 @@ async def action_submit_refund(
 
     order_no = slots.get("order_number")
     reason = slots.get("refund_reason", "")
-    refund_type = slots.get("refund_type", "personal_reason")
+    refund_type_raw = slots.get("refund_type", "")
+    refund_type = _REFUND_TYPE_MAP.get(refund_type_raw)
 
     if not order_no:
         return ActionResult(messages=[{"role": "assistant", "content": "没有提供订单号。"}], end_flow=True)
+    if refund_type is None:
+        return ActionResult(
+            messages=[
+                {
+                    "role": "assistant",
+                    "content": "退款类型无效，请选择：个人原因、课程不满意、时间冲突或重复购买。",
+                }
+            ],
+            end_flow=True,
+        )
 
     try:
         order = await api.find_order_by_no(user_id, order_no)
@@ -45,7 +68,7 @@ async def action_submit_refund(
             slots={
                 "refund_result": (
                     f"订单{order_no}的退款申请已提交。"
-                    f"{number_text}退款类型：{refund_type}，原因：{reason}。后续会尽快处理。"
+                    f"{number_text}退款类型：{refund_type_raw}，原因：{reason}。后续会尽快处理。"
                 )
             }
         )

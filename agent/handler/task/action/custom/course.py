@@ -27,7 +27,32 @@ async def action_lookup_course_info(
         if not series_list:
             return ActionResult(messages=[{"role": "assistant", "content": f"未找到与「{course_name}」相关的课程。"}], end_flow=True)
 
-        series = series_list[0]
+        exact_matches = [
+            item
+            for item in series_list
+            if item.get("seriesName", "").strip().casefold()
+            == course_name.strip().casefold()
+        ]
+        if exact_matches:
+            series = exact_matches[0]
+        elif len(series_list) == 1:
+            series = series_list[0]
+        else:
+            names = [
+                item.get("seriesName", "")
+                for item in series_list[:5]
+                if item.get("seriesName")
+            ]
+            candidates = "、".join(names)
+            return ActionResult(
+                slots={
+                    "course_name": None,
+                    "course_candidates_prompt": (
+                        f"找到多个相关课程：{candidates}。请告诉我你想了解哪一门课程。"
+                    ),
+                }
+            )
+
         cohorts = await api.list_series_cohorts(series["seriesId"])
         cohorts_lines = []
         for c in cohorts:
@@ -41,6 +66,11 @@ async def action_lookup_course_info(
             f"课程：{series.get('seriesName', '')}\n"
             f"在售班次：\n{cohorts_str}"
         )
-        return ActionResult(slots={"course_info": info})
+        return ActionResult(
+            slots={
+                "course_name": series.get("seriesName", course_name),
+                "course_info": info,
+            }
+        )
     except Exception:
         return ActionResult(messages=[{"role": "assistant", "content": "课程查询暂时失败，请稍后重试。"}], end_flow=True)

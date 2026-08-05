@@ -24,6 +24,11 @@ slots:
     label: 课程信息
     description: 课程详细信息（概述、适用人群、班次安排、价格等）
 
+  course_candidates_prompt:
+    type: text
+    label: 课程候选提示
+    description: 多个课程匹配时展示给用户的自然语言澄清提示
+
   cohort_name:
     type: text
     label: 班次名称
@@ -80,12 +85,29 @@ flows:
     steps:
       - id: start
         type: start
+        next: ask_course_name
+
+      - id: ask_course_name
+        type: collect
+        slot_name: course_name
+        response:
+          text: "请告诉我你想了解的课程名称。"
         next: lookup_course
 
       - id: lookup_course
         type: action
         action: action_lookup_course_info
-        next: respond
+        next:
+          - if: "slots.get('course_info')"
+            then: respond
+          - else: ask_course_choice
+
+      - id: ask_course_choice
+        type: collect
+        slot_name: course_name
+        response:
+          text: "{{ slots.course_candidates_prompt }}"
+        next: lookup_course
 
       - id: respond
         type: action

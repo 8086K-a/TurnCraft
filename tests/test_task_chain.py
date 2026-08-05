@@ -22,7 +22,12 @@ from agent.service.dialogue_service import DialogueService
 
 
 class FakePlanner:
+    def __init__(self):
+        self.calls = []
+
     async def plan(self, state, user_message):
+        history = TurnPlanner._history(state)
+        self.calls.append((user_message.text, history))
         if user_message.object is not None:
             return TurnPlan(
                 task={"commands": [{"command": "start_flow", "flow": "course_consultation"}]}
@@ -35,13 +40,34 @@ class FakePlanner:
                 task={"commands": [{"command": "start_flow", "flow": "refund_request"}]},
                 chitchat={},
             )
+        if text == "先处理退款" and "我同时听到了几个需求" in history:
+            return TurnPlan(
+                task={"commands": [{"command": "start_flow", "flow": "refund_request"}]}
+            )
         if text == "课程咨询":
             return TurnPlan(knowledge={"intents": ["课程咨询"]})
         if text == "查询这个的价格":
             return TurnPlan(
-                task={"commands": [{"command": "start_flow", "flow": "course_consultation"}]}
+                task={
+                    "commands": [
+                        {"command": "start_flow", "flow": "course_consultation"},
+                        {
+                            "command": "set_slots",
+                            "slots": {
+                                "course_name": state.focused_object.title,
+                            },
+                        },
+                    ]
+                }
             )
         plans = {
+            "我想咨询课程": [{"command": "start_flow", "flow": "course_consultation"}],
+            "Python全栈": [{"command": "set_slots", "slots": {"course_name": "Python全栈"}}],
+            "我想了解编程课程": [
+                {"command": "start_flow", "flow": "course_consultation"},
+                {"command": "set_slots", "slots": {"course_name": "编程"}},
+            ],
+            "Python进阶": [{"command": "set_slots", "slots": {"course_name": "Python进阶"}}],
             "我要退款": [{"command": "start_flow", "flow": "refund_request"}],
             "ORD1": ([
                 {"command": "resume_flow", "flow": "refund_request"},
@@ -50,7 +76,7 @@ class FakePlanner:
                 {"command": "set_slots", "slots": {"order_number": "ORD1"}}
             ]),
             "课程不合适": [{"command": "set_slots", "slots": {"refund_reason": "课程不合适"}}],
-            "课程不满意": [{"command": "set_slots", "slots": {"refund_type": "course_unsatisfied"}}],
+            "课程不满意": [{"command": "set_slots", "slots": {"refund_type": "课程不满意"}}],
             "查订单 ORD1": [
                 {"command": "start_flow", "flow": "order_status_query"},
                 {"command": "set_slots", "slots": {"order_number": "ORD1"}},
@@ -105,6 +131,15 @@ class FakeEduApi:
         return {"studentId": 301}
 
     async def list_series(self, keyword=None, page=1, size=20):
+        if keyword == "编程":
+            return {
+                "list": [
+                    {"seriesId": 2200, "seriesName": "Python入门"},
+                    {"seriesId": 2201, "seriesName": "Python进阶"},
+                ]
+            }
+        if keyword == "Python进阶":
+            return {"list": [{"seriesId": 2201, "seriesName": "Python进阶"}]}
         return {"list": [{"seriesId": 2199, "seriesName": keyword or "课程"}]}
 
     async def list_series_cohorts(self, series_id):
@@ -171,6 +206,7 @@ def test_refund_multiturn_state_and_order_item_id():
 
         assert any("REF1" in text for text in result)
         assert api.writes[0][1]["order_item_id"] == 501
+        assert api.writes[0][1]["refund_type"] == "course_unsatisfied"
         state = await repository.load("u1")
         assert state.active_task is None
         assert state.paused_tasks == []
@@ -211,7 +247,46 @@ def test_product_object_is_used_by_course_lookup_action():
     asyncio.run(scenario())
 
 
-def test_completed_interrupting_task_automatically_resumes_previous_task():
+def test_course_consultation_collects_name_before_lookup():
+    async def scenario():
+        await DialogueStateRepository.clear()
+        service, repository, _ = build_service()
+
+        started = await send(service, "course-user", "我想咨询课程")
+        assert "请告诉我你想了解的课程名称。" in started
+        waiting = await repository.load("course-user")
+        assert waiting.active_task.flow_id == "course_consultation"
+        assert waiting.active_task.step_id == "ask_course_name"
+
+        result = await send(service, "course-user", "Python全栈")
+        assert any("Python全栈" in text for text in result)
+        completed = await repository.load("course-user")
+        assert completed.active_task is None
+        assert completed.active_system_flow is None
+
+    asyncio.run(scenario())
+
+
+def test_course_consultation_clarifies_multiple_matches():
+    async def scenario():
+        await DialogueStateRepository.clear()
+        service, repository, _ = build_service()
+
+        choices = await send(service, "course-choice-user", "我想了解编程课程")
+        assert any("Python入门、Python进阶" in text for text in choices)
+        waiting = await repository.load("course-choice-user")
+        assert waiting.active_task.flow_id == "course_consultation"
+        assert waiting.active_task.step_id == "ask_course_choice"
+        assert waiting.active_task.slots["course_name"] is None
+
+        result = await send(service, "course-choice-user", "Python进阶")
+        assert any("课程：Python进阶" in text for text in result)
+        assert (await repository.load("course-choice-user")).active_task is None
+
+    asyncio.run(scenario())
+
+
+def test_completed_interrupting_task_returns_idle_and_keeps_previous_task_paused():
     async def scenario():
         await DialogueStateRepository.clear()
         service, repository, _ = build_service()
@@ -220,12 +295,11 @@ def test_completed_interrupting_task_automatically_resumes_previous_task():
         result = await send(service, "u2", "查订单 ORD1")
 
         assert any("已支付" in text for text in result)
-        assert any("继续刚才的退款申请" in text for text in result)
-        assert "请告诉我你的订单号。" in result
+        assert not any("继续刚才的退款申请" in text for text in result)
         state = await repository.load("u2")
-        assert state.active_task.flow_id == "refund_request"
-        assert state.active_task.step_id == "ask_order_number"
-        assert state.paused_tasks == []
+        assert state.active_task is None
+        assert state.active_system_flow is None
+        assert [task.flow_id for task in state.paused_tasks] == ["refund_request"]
 
     asyncio.run(scenario())
 
@@ -302,7 +376,7 @@ def test_chat_history_http_endpoint_returns_real_session_messages():
     assert history[1]["role"] == "bot"
 
 
-def test_cancel_foreground_task_resumes_the_paused_task():
+def test_cancel_foreground_task_returns_idle_and_keeps_previous_task_paused():
     async def scenario():
         await DialogueStateRepository.clear()
         service, repository, _ = build_service()
@@ -312,15 +386,16 @@ def test_cancel_foreground_task_resumes_the_paused_task():
         result = await send(service, "u5", "取消")
 
         assert any("订单状态查询先帮你取消" in text for text in result)
-        assert any("继续刚才的退款申请" in text for text in result)
+        assert not any("继续刚才的退款申请" in text for text in result)
         state = await repository.load("u5")
-        assert state.active_task.flow_id == "refund_request"
-        assert state.paused_tasks == []
+        assert state.active_task is None
+        assert state.active_system_flow is None
+        assert [task.flow_id for task in state.paused_tasks] == ["refund_request"]
 
     asyncio.run(scenario())
 
 
-def test_explicit_resume_pauses_foreground_and_returns_to_it_after_completion():
+def test_explicit_resume_pauses_foreground_and_finishes_in_idle_state():
     async def scenario():
         await DialogueStateRepository.clear()
         service, repository, _ = build_service()
@@ -334,11 +409,11 @@ def test_explicit_resume_pauses_foreground_and_returns_to_it_after_completion():
         await send(service, "u6", "课程不合适")
         completed = await send(service, "u6", "课程不满意")
 
-        assert any("继续刚才的订单状态查询" in text for text in completed)
-        assert "请告诉我你的订单号。" in completed
+        assert not any("继续刚才的订单状态查询" in text for text in completed)
         state = await repository.load("u6")
-        assert state.active_task.flow_id == "order_status_query"
-        assert state.paused_tasks == []
+        assert state.active_task is None
+        assert state.active_system_flow is None
+        assert [task.flow_id for task in state.paused_tasks] == ["order_status_query"]
 
     asyncio.run(scenario())
 
@@ -451,18 +526,21 @@ def test_multiple_tracks_are_clarified_without_starting_a_task():
     asyncio.run(scenario())
 
 
-def test_clarification_choice_resumes_selected_track():
+def test_clarification_choice_is_replanned_from_natural_language():
     async def scenario():
         await DialogueStateRepository.clear()
         service, repository, _ = build_service()
 
         await send(service, "clarify-user", "你好，我要退款")
-        result = await send(service, "clarify-user", "1")
+        result = await send(service, "clarify-user", "先处理退款")
 
         assert "请告诉我你的订单号。" in result
         state = await repository.load("clarify-user")
         assert state.active_task.flow_id == "refund_request"
-        assert state.pending_clarification == []
+        planner = service._engine._planner
+        assert [text for text, _ in planner.calls] == ["你好，我要退款", "先处理退款"]
+        assert "我同时听到了几个需求" in planner.calls[-1][1]
+        assert not hasattr(state, "pending_clarification")
 
     asyncio.run(scenario())
 

@@ -11,6 +11,9 @@ TurnPlan 顶层只允许以下三个字段：
 - 请根据用户真实表达的意图生成结果。
 - 如果用户同时表达了多个意图，可以同时填写多个轨道。
 - 后续执行引擎一次只能处理一个轨道；如果你输出多个轨道，系统会再向用户澄清先处理哪一个。
+- 每一轮都必须根据完整对话历史和当前状态重新判断，不要假设系统保存了上一轮的 TurnPlan。
+- 如果上一条助手消息正在澄清多个方向，结合该澄清、用户当前回复和更早的上下文，重新生成本轮计划。
+- 用户回答澄清问题时，必须依据其自然语言表达和完整历史重新判断；能够确定时只填写一个主要轨道，仍无法确定时三个轨道均保持 null。不要使用固定序号、关键词或规则映射。
 - 不要输出额外字段。
 - 只输出合法 JSON，不要输出 markdown。
 - 最终答案只能是 JSON 文本本身，不要使用 Markdown 代码块包裹，例如以三个反引号和 json 开头的结构。
@@ -77,6 +80,7 @@ Chitchat 对象示例：
 - 用户一次只会发送一条文本消息或一个对象消息。
 - 如果 Focused Object 是 product，且用户意图是了解课程，应启动 course_consultation，并用对象 title 生成 course_name slot。
 - 如果 Focused Object 是 order，且用户意图是查询订单，应启动 order_status_query，并用对象 id 生成 order_number slot。
+- 如果 Focused Object 是 cohort，且用户意图是查询学习进度，应启动 learning_progress_query，并用对象 title 生成 cohort_name slot。
 
 继续活跃任务（slot 收集）规则：
 - 如果存在 Active Task，且上一条助手消息是在询问用户提供某个信息（例如工单描述、退款原因等），则用户的回复应视为对该信息的补充。
