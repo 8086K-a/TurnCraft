@@ -28,6 +28,19 @@ class TrackSelectedEvent(EventData):
     track: str
 
 
+class RoutingEvent(EventData):
+    event: str = "routing"
+    problem_type: str | None = None
+    decision: str
+    channel: str = ""
+    skip_llm: bool = False
+    cache_hit: bool = False
+    cancel_flow: bool = False
+    selected_tools: list[dict] = Field(default_factory=list)
+    alternatives: list[dict] = Field(default_factory=list)
+    missing_parameters: list[str] = Field(default_factory=list)
+
+
 class CommandEvent(EventData):
     event: str = "command"
     command_name: str
@@ -130,6 +143,7 @@ TraceEvent = (
     TurnStartEvent
     | PlanEvent
     | TrackSelectedEvent
+    | RoutingEvent
     | CommandEvent
     | StateChangeEvent
     | StateFullEvent
@@ -177,6 +191,27 @@ class WorkflowTrace(BaseModel):
 
     def track_selected(self, track: str) -> None:
         self._add(TrackSelectedEvent(track=track))
+
+    def routing(self, result: Any) -> None:
+        self._add(RoutingEvent(
+            problem_type=(
+                result.problem_type.value if result.problem_type else None
+            ),
+            decision=result.decision.value,
+            channel=result.channel,
+            skip_llm=result.skip_llm,
+            cache_hit=result.cache_hit,
+            cancel_flow=result.cancel_flow,
+            selected_tools=[
+                {"name": c.name, "final_score": round(c.final_score, 4)}
+                for c in result.selected_tools
+            ],
+            alternatives=[
+                {"name": c.name, "final_score": round(c.final_score, 4)}
+                for c in result.alternatives
+            ],
+            missing_parameters=list(result.missing_parameters),
+        ))
 
     def command(self, command_name: str, details: dict[str, Any]) -> None:
         self._add(CommandEvent(command_name=command_name, details=details))

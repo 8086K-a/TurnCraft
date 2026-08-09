@@ -115,6 +115,9 @@ class DialogueEngine:
                 plan = self._plan_validator.validate(plan)
             plan_dict = plan.model_dump(mode="json") if hasattr(plan, "model_dump") else {}
             trace.plan(plan_dict)
+            last_result = getattr(self._planner, "last_result", None)
+            if last_result is not None:
+                trace.routing(last_result)
         except (ValueError, TypeError):
             text = await self._clarify_responder.respond("invalid_plan", user_message=user_message, history=self._history(state))
             return [BotMessage(text=text)]

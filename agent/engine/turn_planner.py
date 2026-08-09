@@ -21,6 +21,9 @@ class TurnPlan(BaseModel):
     task: TaskPlan | None = None
     knowledge: dict[str, Any] | None = None
     chitchat: dict[str, Any] | None = None
+    # 扩展：由路由层直接给出的澄清理由（如 multiple_intents），
+    # 不占用 task/knowledge/chitchat 三个轨道，PlanRouter 优先处理。
+    clarify: str | None = None
 
 
 class TurnPlanner:

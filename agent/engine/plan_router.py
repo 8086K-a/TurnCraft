@@ -24,6 +24,9 @@ class PlanRouter:
         self._knowledge_handler = knowledge_handler or KnowledgeHandler()
 
     async def route(self, state, user_message, plan: TurnPlan, trace):
+        if getattr(plan, "clarify", None):
+            trace.track_selected(f"clarify_{plan.clarify}")
+            return [BotMessage(text=await self._clarify(plan.clarify, state, user_message))]
         tracks = [
             (name, value)
             for name, value in (
