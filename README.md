@@ -30,6 +30,7 @@ TurnCraft 是一个面向企业工单、智能客服等多轮任务场景的 **�
 - [执行可靠性](#执行可靠性)
 - [目录结构](#目录结构)
 - [快速开始](#快速开始)
+  - [Docker 部署](#docker-部署)
 - [配置说明](#配置说明)
 - [评测与优化](#评测与优化)
 - [如何扩展新任务](#如何扩展新任务)
@@ -414,6 +415,9 @@ TurnCraft/
 │   ├── test_golden_code_path.py   #   确定性 FakeLLM 代码路径测试
 │   └── test_task_chain.py
 ├── frontend/                      # 演示前端
+├── Dockerfile                     # 多阶段构建（前端 + 后端）
+├── docker-compose.yml             # 一键部署（MySQL + 后端）
+├── .env.example                   # 环境变量模板
 └── pyproject.toml
 ```
 
@@ -436,6 +440,28 @@ cp .env.example .env
 # 4. 打开前端 / 调用 API
 # POST /api/chat  { "sender_id": "user_1", "text": "我要退款" }
 ```
+
+### Docker 部署
+
+```bash
+# 1. 配置环境变量
+cp .env.example .env
+# 编辑 .env 填写 LLM_API_KEY 等配置
+
+# 2. 一键启动（含 MySQL + 后端）
+docker compose up -d --build
+
+# 3. 查看日志
+docker compose logs -f backend
+
+# 4. 停止服务
+docker compose down          # 保留数据
+docker compose down -v       # 删除数据卷
+```
+
+启动后访问 `http://localhost:18082`。
+
+> **注意**：首次启动需确保 MySQL 初始化完成，后端会自动等待数据库就绪。
 
 ### 测试与评测
 
