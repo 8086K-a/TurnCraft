@@ -34,6 +34,7 @@ TurnCraft 是一个面向企业工单、智能客服等多轮任务场景的 **�
 - [配置说明](#配置说明)
 - [评测与优化](#评测与优化)
 - [如何扩展新任务](#如何扩展新任务)
+- [接入第三方系统接口](#接入第三方系统接口)
 
 ---
 
@@ -524,6 +525,177 @@ TurnCraft 使用**100 条多轮客服测试集**进行端到端评测，覆盖�
 2. 如需新动作，在 `agent/handler/task/action/custom.py` 的 `register_custom_actions` 中注册一个 Action；
 3. 如需补充路由关键词/提示，在 `agent/router/tool_annotations.yml` 添加同名条目；
 4. 重启服务，工具注册表会自动从 YAML 生成，路由、执行、状态恢复全部自动生效。
+
+---
+
+## 接入第三方系统接口
+
+TurnCraft 采用 **API Client + Action 函数 + YAML 流程** 三层架构对接外部系统，接入一个新接口只需三步。
+
+### 整体架构
+
+```
+用户说 "查一下订单 20240101"
+        │
+        ▼
+   LLM 提取 tool_calls: {tool: "order_lookup", parameters: {order_number: "20240101"}}
+        │
+        ▼
+   YAML 流程匹配 → 执行 action_lookup_order_status
+        │
+        ▼
+   Action 调用 EduApiClient → HTTP 请求第三方系统
+        │
+        ▼
+   返回结构化结果 → 填充槽位 → 回复用户
+```
+
+### 第一步：封装 API Client
+
+在 `agent/infrastructure/` 下新增或扩展现有 Client，封装对外部系统的 HTTP 调用：
+
+```python
+# agent/infrastructure/edu_api.py（已有，按需扩展）
+class EduApiClient:
+    def __init__(self, base_url: str, timeout: float = 10):
+        self._base = base_url.rstrip("/")
+        self._timeout = timeout
+
+    async def _request(self, method: str, path: str, user_id=None, **kwargs):
+        """统一请求封装：鉴权、异常处理、响应解析"""
+        url = f"{self._base}{path}"
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            resp = await client.request(
+                method, url, headers=self._headers(user_id), **kwargs
+            )
+        resp.raise_for_status()
+        body = resp.json()
+        # 判断业务状态码
+        if body.get("code") not in (0, "ok"):
+            raise EduApiError(code=body["code"], message=body.get("message", ""))
+        return body.get("data")
+
+    # ---- 按业务需求添加方法 ----
+    async def list_orders(self, user_id, status=None, page=1, size=20):
+        return await self._request("GET", "/api/v1/orders", user_id=user_id, params={...})
+
+    async def find_order_by_no(self, user_id, order_no):
+        # 分页遍历查找
+        ...
+
+    async def query_logistics(self, tracking_no: str):
+        """示例：接入第三方物流查询"""
+        return await self._request("GET", f"/api/v1/logistics/{tracking_no}")
+```
+
+> **规范**：Client 通过 `X-User-Id` Header 传递用户身份；统一 `_request()` 处理超时、HTTP 错误和业务错误码。
+
+### 第二步：编写 Action 函数
+
+在 `agent/handler/task/action/custom/` 下新建 Python 文件，函数名必须以 `action_` 开头：
+
+```python
+# agent/handler/task/action/custom/logistics.py
+from ..models import ActionResult
+
+
+async def action_query_logistics(
+    args: dict,        # LLM 抽取的参数
+    slots: dict,       # 已收集的槽位
+    context: dict,     # 对话上下文（含 user_id）
+    **kwargs,          # 注入的 api / db 等依赖
+) -> ActionResult:
+    api = kwargs.get("api")
+    if not api:
+        return ActionResult(messages=[{"role": "assistant", "content": "服务不可用。"}], end_flow=True)
+
+    tracking_no = slots.get("tracking_number") or args.get("tracking_number")
+    if not tracking_no:
+        return ActionResult(messages=[{"role": "assistant", "content": "请提供运单号。"}], end_flow=True)
+
+    try:
+        result = await api.query_logistics(tracking_no)
+        summary = f"物流状态：{result['status']}，当前位置：{result['location']}"
+        return ActionResult(slots={"logistics_status": summary})
+    except Exception as e:
+        return ActionResult(messages=[{"role": "assistant", "content": "查询失败，请稍后重试。"}], end_flow=True)
+```
+
+**Action 签名规范：**
+
+| 参数 | 类型 | 说明 |
+|---|---|---|
+| `args` | `dict` | LLM 从用户输入中抽取的参数 |
+| `slots` | `dict` | 当前流程已收集的所有槽位 |
+| `context` | `dict` | 对话上下文，`context["user_id"]` 为当前用户 |
+| `kwargs["api"]` | `EduApiClient` | 第三方 API 客户端实例 |
+| **返回值** | `ActionResult` | `slots` 填充槽位 / `messages` 回复用户 / `end_flow` 是否结束 |
+
+> 文件放在 `custom/` 目录下且函数名以 `action_` 开头即可**自动注册**，无需手动 import。
+
+### 第三步：配置 YAML 流程
+
+在 `flow_config/user_flows.yml` 中声明槽位和流程节点：
+
+```yaml
+# ---- 槽位定义 ----
+slots:
+  tracking_number:
+    type: text
+    label: 运单号
+
+# ---- 流程定义 ----
+flows:
+  logistics_query:
+    name: 物流查询
+    description: 根据运单号查询物流状态
+    steps:
+      - id: start
+        type: start
+        next: ask_tracking_number
+
+      - id: ask_tracking_number
+        type: collect
+        slot_name: tracking_number
+        response:
+          text: "请提供您的运单号。"
+        next: do_query
+
+      - id: do_query
+        type: action
+        action: action_query_logistics   # ← 对应 Action 函数名
+        next: show_result
+
+      - id: show_result
+        type: action
+        action: action_response
+        args:
+          text: "{{ slots.logistics_status }}"
+        next: end
+
+      - id: end
+        type: end
+```
+
+### 现有接入示例
+
+| 业务场景 | API Client 方法 | Action 函数 | YAML flow_id |
+|---|---|---|---|
+| 订单查询 | `api.find_order_by_no()` | `action_lookup_order_status` | `order_status_query` |
+| 课程咨询 | `api.list_series()` + `api.list_series_cohorts()` | `action_lookup_course_info` | `course_consultation` |
+| 学习进度 | `api.list_my_cohorts()` + `api.get_my_cohort_progress()` | `action_lookup_learning_progress` | `learning_progress_query` |
+| 退款申请 | `api.create_refund_request()` | `action_submit_refund` | `refund_request` |
+| 工单提交 | `api.create_service_ticket()` | `action_submit_ticket` | `ticket_submission` |
+
+### 接入新系统的 Checklist
+
+```
+□ 1. 在 agent/infrastructure/ 下封装 API Client（HTTP 调用 + 错误处理）
+□ 2. 在 agent/handler/task/action/custom/ 下编写 action_ 函数
+□ 3. 在 flow_config/user_flows.yml 中声明槽位和流程
+□ 4. 在 .env 中配置第三方系统地址（如 LOGISTICS_API_BASE_URL）
+□ 5. 重启服务，工具注册表自动生效，无需改框架代码
+```
 
 ---
 
