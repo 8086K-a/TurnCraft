@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/img.png" alt="TurnCraft - 多轮任务型 Agent 框架" width="100%">
+</p>
+
 # TurnCraft
 
 > 多轮任务型 Agent 框架 · Turn-taking Task-oriented Agent Framework
